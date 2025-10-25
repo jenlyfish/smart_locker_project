@@ -12,7 +12,7 @@ import {
   ArrowLeft,
   Search,
 } from "lucide-react";
-import { getItems, getLockers, borrowItem } from "../utils/api";
+import { getItems, getLockers, borrowItem, confirmPresence } from "../utils/api";
 
 const Borrow = () => {
   const { user } = useAuth();
@@ -36,6 +36,10 @@ const Borrow = () => {
   useEffect(() => {
     fetchItems();
     fetchLockers();
+  }, []);
+
+  useEffect(() => {
+   console.log("📄 Page Borrow chargée !");
   }, []);
 
   const fetchItems = async () => {
@@ -116,7 +120,7 @@ const Borrow = () => {
   const handleConfirmBorrow = async () => {
     setLoading(true);
     setError("");
-
+ 
     try {
       await borrowItem({
         user_id: user.id,
@@ -130,15 +134,90 @@ const Borrow = () => {
       await fetchItems();
       await fetchLockers();
 
-      setTimeout(() => {
-        navigate("/");
-      }, 500);
+      setStep(5);
     } catch (error) {
       setError(error.response?.data?.message || t("borrow_error"));
     } finally {
       setLoading(false);
     }
   };
+
+  const handleOpenLocker = async () => {
+    setLoading(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      // 🔓 1️⃣ Ouvre la porte via l’API Flask
+      //const response = await api.post(`api/lockers/${selectedLocker.id}/open`);
+      //console.log("✅ Casier ouvert :", response.data);
+      await new Promise((r) => setTimeout(r, 1000));
+      console.log("🔓 Simulation : ouverture casier réussie");
+
+      // 2️⃣ Indique à l’utilisateur que la porte est ouverte
+      setSuccess(t("locker_opened_wait_presence"));
+
+      // 3️⃣ Passe à l’étape 5 (confirmation de présence)
+      setStep(5);
+    } catch (err) {
+      console.error("Erreur ouverture casier :", err);
+      setError(t("open_locker_error"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+ const handleConfirmPresence = async (isPresent) => {
+  setLoading(true);
+  setError("");
+  setSuccess("");
+
+  console.log("✅ handleConfirmPresence called");
+  console.log("User:", user);
+  console.log("Selected item:", selectedItem);
+  console.log("Selected locker:", selectedLocker);
+
+  if (!selectedLocker || !selectedItem || !user) {
+    setError("Informations manquantes pour confirmer la présence");
+    setLoading(false);
+    return;
+  }
+
+  try {
+    // 1️⃣ Envoi de la confirmation de présence au backend
+    const payload = {
+      user_id: user.id,
+      item_id: selectedItem.id,
+      present: isPresent,
+      message: isPresent ? "Borrow confirmed" : "Item missing",
+    };
+
+    console.log("Payload envoyé à /lockers/:id/confirm_presence :", payload);
+
+    await confirmPresence(selectedLocker.id, payload);
+
+    // 2️⃣ Gestion du résultat
+    if (isPresent) {
+      setSuccess(t("borrow_success_confirmed"));
+    } else {
+      setError(t("equipment_missing_reported"));
+    }
+
+    // 3️⃣ Rafraîchir l'état local
+    await fetchItems();
+    await fetchLockers();
+
+    // 4️⃣ Retour au menu principal après un petit délai
+    setTimeout(() => {
+      navigate("/");
+    }, 2000);
+  } catch (err) {
+    console.error("Erreur confirmation présence :", err);
+    setError(t("borrow_error"));
+  } finally {
+    setLoading(false);
+  }
+};
 
   const resetProcess = () => {
     setStep(1);
@@ -167,7 +246,7 @@ const Borrow = () => {
       {/* Progress Steps */}
       <div className="mb-8">
         <div className="flex items-center justify-center space-x-4">
-          {[1, 2, 3, 4].map((stepNumber) => (
+          {[1, 2, 3, 4, 5].map((stepNumber) => (
             <div key={stepNumber} className="flex items-center">
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
@@ -178,7 +257,7 @@ const Borrow = () => {
               >
                 {stepNumber}
               </div>
-              {stepNumber < 4 && (
+              {stepNumber < 5 && (
                 <div
                   className={`w-16 h-1 mx-2 ${
                     step > stepNumber ? "bg-primary-600" : "bg-gray-200"
@@ -766,19 +845,51 @@ const Borrow = () => {
               {t("cancel")}
             </button>
             <button
-              onClick={handleConfirmBorrow}
+              onClick={handleOpenLocker}
               disabled={loading}
               className="btn-primary flex-1"
             >
               {loading ? (
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                t("opening_locker")
               ) : (
-                t("confirm_borrow")
+                t("open_locker_and_continue")
               )}
             </button>
           </div>
         </div>
       )}
+     {step === 5 && (
+        <div className="card text-center">
+          <h2
+            className={`text-2xl font-semibold mb-2 ${
+              isDarkMode ? "text-white" : "text-gray-900"
+            }`}
+          >
+            {t("confirm_equipment_presence")}
+          </h2>
+          <p className={`${isDarkMode ? "text-gray-300" : "text-gray-600"} mb-6`}>
+            {t("please_confirm_equipment_inside")}
+          </p>
+
+          <div className="flex justify-center space-x-4">
+            <button
+              onClick={() => handleConfirmPresence(true)}
+              disabled={loading}
+              className="btn-secondary"
+            >
+              {t("equipment_present")}
+            </button>
+            <button
+              onClick={() => handleConfirmPresence(false)}
+              disabled={loading}
+              className="btn-secondary"
+            >
+              {t("equipment_missing")}
+            </button>
+          </div>
+        </div>
+      )}
+
 
       {/* Back Button */}
       <div className="mt-8 text-center">

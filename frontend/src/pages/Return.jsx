@@ -11,7 +11,7 @@ import {
   ArrowLeft,
   Search,
 } from "lucide-react";
-import { getBorrows, returnItem } from "../utils/api";
+import { getBorrows, returnItem, confirmReturn, openFreeLocker } from "../utils/api";
 
 const Return = () => {
   const { user } = useAuth();
@@ -26,14 +26,10 @@ const Return = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [itemSearchTerm, setItemSearchTerm] = useState("");
+  const [selectedCondition, setSelectedCondition] = useState("");
+  const [openedLockerId, setOpenedLockerId] = useState(null);
 
-  // Don't auto-fetch on load, wait for user interaction like in Borrow page
-  // useEffect(() => {
-  //   if (user) {
-  //     fetchBorrowedItems();
-  //     setStep(2);
-  //   }
-  // }, [user]);
+
 
   const handleRfidScan = () => {
     // Simulate RFID scan for UX flow, but use authenticated user
@@ -78,30 +74,63 @@ const Return = () => {
     setStep(3);
   };
 
-  const handleConfirmReturn = async () => {
+  const handleOpenFreeLocker = async () => {
     setLoading(true);
     setError("");
+    setSuccess("");
 
     try {
-      await returnItem(selectedItem.id, {
-        condition: "good", // Default condition
-        notes: "Returned via web interface",
-      });
-
-      setSuccess(t("return_success"));
-
-      // Refresh borrowed items after successful return
-      await fetchBorrowedItems();
-
-      setTimeout(() => {
-        navigate("/");
-      }, 500);
-    } catch (error) {
-      setError(error.response?.data?.message || t("return_error"));
+      // call API to open a free locker
+      const resp = await openFreeLocker();
+      // resp must return { locker_id: number, message: string }
+      setOpenedLockerId(resp.locker_id);
+      setSuccess(`${t("locker_opened_for_return")} (#${resp.locker_id})`);
+      setStep(5); // Now we will confirm the return
+    } catch (err) {
+      console.error("Error opening free locker:", err);
+      setError(err.response?.data?.message || t("no_free_locker"));
     } finally {
       setLoading(false);
     }
   };
+
+ const handleConfirmReturn = async () => {
+  setLoading(true);
+  setError("");
+  setSuccess("");
+
+  try {
+    if (!selectedItem) {
+      setError("no item selected.");
+      setLoading(false);
+      return;
+    }
+
+    if (!selectedCondition) {
+      setError("Please select the item condition.");
+      setLoading(false);
+      return;
+    }
+
+    const payload = {
+      user_id: user.id,
+      item_id: selectedItem.id,
+      condition: selectedCondition,
+    };
+
+    console.log("Payload retour →", payload);
+
+    await confirmReturn(payload);
+
+    setSuccess("Return confirmed!");
+    setTimeout(() => navigate("/"), 1500);
+  } catch (error) {
+    console.error("Error confirming return:", error);
+    setError(error.response?.data?.error || "Error during return.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const resetProcess = () => {
     setStep(1);
@@ -129,7 +158,7 @@ const Return = () => {
       {/* Progress Steps */}
       <div className="mb-8">
         <div className="flex items-center justify-center space-x-4">
-          {[1, 2, 3].map((stepNumber) => (
+          {[1, 2, 3, 4, 5].map((stepNumber) => (
             <div key={stepNumber} className="flex items-center">
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
@@ -140,7 +169,7 @@ const Return = () => {
               >
                 {stepNumber}
               </div>
-              {stepNumber < 3 && (
+              {stepNumber < 5 && (
                 <div
                   className={`w-16 h-1 mx-2 ${
                     step > stepNumber ? "bg-primary-600" : "bg-gray-200"
@@ -391,98 +420,69 @@ const Return = () => {
         </div>
       )}
 
-      {/* Step 3: Confirmation */}
+      {/* Step 3: Select item condition */}
       {step === 3 && (
-        <div className="card">
-          <div className="mb-6">
-            <h2
-              className={`text-2xl font-semibold mb-2 ${
-                isDarkMode ? "text-white" : "text-gray-900"
-              }`}
-            >
-              {t("confirm_return")}
-            </h2>
-            <p className={`${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
-              {t("confirm_return_details")}
-            </p>
-          </div>
+        <div className="card text-center">
+          <h2 className={`text-2xl font-semibold mb-2 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+            {t("confirm_equipment_presence")}
+          </h2>
+          <p className={`${isDarkMode ? "text-gray-300" : "text-gray-600"} mb-6`}>
+            {t("please_confirm_equipment_return")}
+          </p>
 
-          <div
-            className={`rounded-lg p-6 mb-6 ${
-              isDarkMode ? "bg-gray-700" : "bg-gray-50"
-            }`}
-          >
-            <div className="space-y-4">
-              <div className="flex justify-between">
-                <span
-                  className={`${
-                    isDarkMode ? "text-gray-300" : "text-gray-600"
-                  }`}
-                >
-                  {t("user")}:
-                </span>
-                <span
-                  className={`font-medium ${
-                    isDarkMode ? "text-white" : "text-gray-900"
-                  }`}
-                >
-                  {user?.first_name} {user?.last_name} ({user?.username})
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span
-                  className={`${
-                    isDarkMode ? "text-gray-300" : "text-gray-600"
-                  }`}
-                >
-                  {t("item")}:
-                </span>
-                <span
-                  className={`font-medium ${
-                    isDarkMode ? "text-white" : "text-gray-900"
-                  }`}
-                >
-                  {selectedItem?.item_name}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span
-                  className={`${
-                    isDarkMode ? "text-gray-300" : "text-gray-600"
-                  }`}
-                >
-                  {t("locker")}:
-                </span>
-                <span
-                  className={`font-medium ${
-                    isDarkMode ? "text-white" : "text-gray-900"
-                  }`}
-                >
-                  {selectedItem?.locker_name}
-                </span>
-              </div>
-            </div>
+          <div className="flex justify-center space-x-4">
+            <button onClick={() => { setSelectedCondition("good"); setStep(4); }} className="btn-secondary">
+              {t("equipment_good")}
+            </button>
+            <button onClick={() => { setSelectedCondition("damaged"); setStep(4); }} className="btn-secondary">
+              {t("equipment_damaged")}
+            </button>
           </div>
+        </div>
+      )}     
+      {/* Step 4: Open free locker */}
+      {step === 4 && (
+        <div className="card text-center">
+          <h2 className={`text-2xl font-semibold mb-2 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+            {t("open_free_locker")}
+          </h2>
+          <p className={`${isDarkMode ? "text-gray-300" : "text-gray-600"} mb-6`}>
+            {t("system_will_open_free_locker")}
+          </p>
 
-          <div className="flex space-x-4">
+          <div className="flex space-x-4 justify-center">
             <button onClick={resetProcess} className="btn-secondary">
               {t("cancel")}
             </button>
             <button
-              onClick={handleConfirmReturn}
+              onClick={handleOpenFreeLocker}
               disabled={loading}
-              className="btn-primary flex-1"
+              className="btn-primary"
             >
-              {loading ? (
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-              ) : (
-                t("confirm_return")
-              )}
+              {loading ? t("opening_locker") : t("open_locker_and_continue")}
             </button>
           </div>
         </div>
       )}
+      {step === 5 && (
+        <div className="card text-center">
+          <h2 className={`text-2xl font-semibold mb-2 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+            {t("confirm_equipment_return")}
+          </h2>
+          <p className={`${isDarkMode ? "text-gray-300" : "text-gray-600"} mb-6`}>
+            {t("please_confirm_equipment_return_in_locker", { locker: openedLockerId })}
+          </p>
 
+          <div className="flex justify-center space-x-4">
+            <button onClick={resetProcess} className="btn-secondary">
+              {t("cancel")}
+            </button>
+            <button onClick={handleConfirmReturn} disabled={loading} className="btn-primary">
+              {loading ? t("saving") : t("confirm_return")}
+            </button>
+          </div>
+        </div>
+      )}
       {/* Back Button */}
       <div className="mt-8 text-center">
         <button

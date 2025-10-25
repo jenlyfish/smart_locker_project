@@ -35,12 +35,14 @@ const Items = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [lockerFilter, setLockerFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [formData, setFormData] = useState({
     name: "",
     locker_id: "",
     description: "",
+    status: "",
   });
   const [pageSize, setPageSize] = useState(25);
   const [currentPage, setCurrentPage] = useState(1);
@@ -71,7 +73,7 @@ const Items = () => {
     try {
       await axios.post("/api/admin/items", formData);
       setShowAddModal(false);
-      setFormData({ name: "", locker_id: "", description: "" });
+      setFormData({ name: "", locker_id: "", description: "", status: "" });
       fetchData();
     } catch (error) {
       console.error("Error adding item:", error);
@@ -84,7 +86,7 @@ const Items = () => {
     try {
       await axios.put(`/api/admin/items/${editingItem.id}`, formData);
       setEditingItem(null);
-      setFormData({ name: "", locker_id: "", description: "" });
+      setFormData({ name: "", locker_id: "", description: "", status: "" });
       fetchData();
     } catch (error) {
       console.error("Error updating item:", error);
@@ -110,13 +112,14 @@ const Items = () => {
       name: item.name,
       locker_id: item.locker_id || "",
       description: item.description || "",
+      status: item.status || "", 
     });
   };
 
   const closeModal = () => {
     setShowAddModal(false);
     setEditingItem(null);
-    setFormData({ name: "", locker_id: "", description: "" });
+    setFormData({ name: "", locker_id: "", description: "", status: "" });
   };
 
   const exportItems = async (format) => {
@@ -153,7 +156,10 @@ const Items = () => {
       .includes(searchTerm.toLowerCase());
     const matchesLocker =
       lockerFilter === "all" || item.locker_id == lockerFilter;
-    return matchesSearch && matchesLocker;
+    const matchesStatus =
+      statusFilter === "all" || item.status === statusFilter;
+
+    return matchesSearch && matchesLocker && matchesStatus;
   });
 
   const totalPages =
@@ -241,6 +247,22 @@ const Items = () => {
                 {locker.name || locker.number}
               </option>
             ))}
+          </select>
+          
+          {/* Status Filter */}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className={`px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent ${
+              isDarkMode
+                ? "bg-gray-700 border-gray-600 text-white"
+                : "bg-white border-gray-300 text-gray-900"
+            }`}
+          >
+            <option value="all">{t("all_statuses")}</option>
+            <option value="good">{t("good")}</option>
+            <option value="incomplete">{t("incomplete")}</option>
+            <option value="missing">{t("missing")}</option>
           </select>
 
           {/* Page Size Selector */}
@@ -339,6 +361,13 @@ const Items = () => {
                       isDarkMode ? "text-gray-300" : "text-gray-500"
                     }`}
                   >
+                    {t("status")}
+                  </th>
+                  <th
+                    className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${
+                      isDarkMode ? "text-gray-300" : "text-gray-500"
+                    }`}
+                  >
                     {t("locker")}
                   </th>
                   <th
@@ -347,7 +376,7 @@ const Items = () => {
                     }`}
                   >
                     {t("actions")}
-                  </th>
+                  </th>                                 
                 </tr>
               </thead>
               <tbody
@@ -388,6 +417,21 @@ const Items = () => {
                           </div>
                         </div>
                       </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                          item.status === "good"
+                            ? "bg-green-100 text-green-800"
+                            : item.status === "incomplete"
+                            ? "bg-yellow-100 text-yellow-800"
+                            : item.status === "missing"
+                            ? "bg-red-100 text-red-800"
+                            : "bg-gray-100 text-gray-800"
+                        }`}
+                      >
+                        {item.status || t("unknown")}
+                      </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
@@ -540,6 +584,34 @@ const Items = () => {
                   ))}
                 </select>
               </div>
+              {/* État de l’item */}
+              <div>
+                <label
+                  className={`block text-sm font-medium mb-2 ${
+                    isDarkMode ? "text-white" : "text-gray-700"
+                  }`}
+                >
+                  {t("item_status")}
+                </label>
+                <select
+                  value={formData.status || ""}
+                  onChange={(e) =>
+                    setFormData({ ...formData, status: e.target.value })
+                  }
+                  className={`w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent ${
+                    isDarkMode
+                      ? "bg-gray-700 border-gray-600 text-white"
+                      : "bg-white border-gray-300 text-gray-900"
+                  }`}
+                >
+                  <option value="">{t("select_status")}</option>
+                  <option value="good">{t("good")}</option>
+                  <option value="incomplete">{t("incomplete")}</option>
+                  <option value="missing">{t("missing")}</option>
+                </select>
+              </div>
+
+              {/* Description de l’item */}
               <div>
                 <label
                   className={`block text-sm font-medium mb-2 ${
@@ -635,6 +707,33 @@ const Items = () => {
                   }`}
                 />
               </div>
+              {/* État de l’item */}
+              <div>
+                <label
+                  className={`block text-sm font-medium mb-2 ${
+                    isDarkMode ? "text-white" : "text-gray-700"
+                  }`}
+                >
+                  {t("item_status")}
+                </label>
+                <select
+                  value={formData.status || ""}
+                  onChange={(e) =>
+                    setFormData({ ...formData, status: e.target.value })
+                  }
+                  className={`w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent ${
+                    isDarkMode
+                      ? "bg-gray-700 border-gray-600 text-white"
+                      : "bg-white border-gray-300 text-gray-900"
+                  }`}
+                >
+                  <option value="">{t("select_status")}</option>
+                  <option value="good">{t("good")}</option>
+                  <option value="incomplete">{t("incomplete")}</option>
+                  <option value="missing">{t("missing")}</option>
+                </select>
+              </div>
+
               <div>
                 <label
                   className={`block text-sm font-medium mb-2 ${

@@ -815,10 +815,11 @@ def get_borrows():
         user_id = request.args.get("user_id", type=int)
 
         query = Borrow.query
-        if status:
-            query = query.filter_by(status=status)
         if user_id:
             query = query.filter_by(user_id=user_id)
+        if status:
+            query = query.filter_by(status=status)
+
 
         borrows = query.paginate(page=page, per_page=per_page, error_out=False)
 
@@ -842,6 +843,7 @@ def create_borrow():
         data = request.get_json()
         user_id = data.get("user_id")
         item_id = data.get("item_id")
+        locker_id = data.get("locker_id")
         due_date = data.get("due_date")
 
         if not user_id or not item_id:
@@ -1069,6 +1071,23 @@ def open_locker_endpoint(locker_id):
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
 
 
+@app.route("/api/lockers/open_free", methods=["POST"])
+@jwt_required()
+def open_free_locker():
+    try:
+        free = Locker.query.filter_by(current_occupancy=0).first()
+        if not free:
+            return jsonify({"error": "Aucun casier libre disponible"}), 400
+
+        # Ouvre physiquement ou simule l'ouverture :
+        # rs485_controller.open_locker(free.id)
+
+        return jsonify({"message": "Casier libre ouvert", "locker_id": free.id}), 200
+    except Exception as e:
+        logger.error(f"open_free_locker error: {e}")
+
+        return jsonify({"error": "Internal server error"}), 500
+
 @app.route("/api/lockers/<int:locker_id>/close", methods=["POST"])
 @jwt_required()
 @admin_required
@@ -1106,6 +1125,115 @@ def close_locker_endpoint(locker_id):
         logger.error(f"Close locker error: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
+
+@app.route("/api/lockers/<int:locker_id>/confirm_presence", methods=["POST"])
+@jwt_required()
+def confirm_presence(locker_id):
+    """Confirm presence of item in locker after opening"""
+    try:
+        data = request.get_json()
+        user_id = data.get("user_id")
+        item_id = data.get("item_id")
+        present = data.get("present")
+
+        if user_id is None or item_id is None or present is None:
+            return jsonify({"error": "Missing fields"}), 400
+
+        locker = Locker.query.get(locker_id)
+        item = Item.query.get(item_id)
+        if not locker or not item:
+            return jsonify({"error": "Locker or item not found"}), 404
+
+        # If equipment is present
+        if present:
+            borrow = Borrow(
+                user_id=user_id,
+                item_id=item_id,
+                locker_id=locker_id,
+                borrowed_at=datetime.utcnow(),
+                status="borrowed"
+            )
+            db.session.add(borrow)
+            item.status = "borrowed"
+            db.session.commit()
+
+            log_action(
+                "borrow_confirmed",
+                user_id=user_id,
+                item_id=item_id,
+                locker_id=locker_id,
+                details=f"Borrow confirmed for item {item.name}"
+            )
+
+            return jsonify({
+                "message": "Borrow confirmed",
+                "borrow_id": borrow.id
+            }), 200
+        else:
+            # If the equipment is missing
+            item.status = "missing"
+            db.session.commit()
+
+            log_action(
+                "item_missing",
+                user_id=user_id,
+                item_id=item_id,
+                locker_id=locker_id,
+                details=f"Item {item.name} reported missing"
+            )
+
+            return jsonify({"message": "Equipment reported missing"}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error in confirm_presence: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route("/api/lockers/confirm_return", methods=["POST"])
+@jwt_required()
+def confirm_return():
+    try:
+        data = request.get_json()
+        user_id = data.get("user_id")
+        item_id = data.get("item_id")
+        condition = data.get("condition", "good")
+
+        # Find a free locker to return the item
+        free_locker = Locker.query.filter_by(current_occupancy=0).first()
+        if not free_locker:
+            return jsonify({"error": "Aucun casier vide disponible"}), 400
+
+        # open the free locker
+        print(f"🔓 Ouverture du casier vide {free_locker.id}")
+        #rs485_controller.open_locker(free_locker.id)
+
+        # update borrow record
+        borrow = Borrow.query.filter_by(item_id=item_id, user_id=user_id, status="borrowed").first()
+        if not borrow:
+            return jsonify({"error": "Aucun emprunt actif trouvé"}), 400
+
+        borrow.status = "returned"
+        borrow.return_date = datetime.utcnow()
+
+        item = Item.query.get(item_id)
+        item.status = "available"
+        item.condition = condition
+        item.locker_id = free_locker.id  # assign item to the free locker
+
+        free_locker.current_occupancy = 1  # locker is now occupied
+
+        db.session.commit()
+
+        log_action("return", user_id, item_id, free_locker.id, f"Item {item.name} returned")
+
+        return jsonify({
+            "message": f"Casier {free_locker.id} ouvert pour dépôt",
+            "locker_id": free_locker.id
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Erreur retour : {e}")
+        return jsonify({"error": "Erreur interne"}), 500
 
 @app.route("/api/lockers/<int:locker_id>/status", methods=["GET"])
 @jwt_required()

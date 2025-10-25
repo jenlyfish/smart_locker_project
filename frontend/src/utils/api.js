@@ -83,10 +83,25 @@ export const openLocker = async (lockerId) => {
   return response.data;
 };
 
+export const openFreeLocker = async () => {
+  const response = await api.post("/lockers/open_free");
+  return response.data;
+};
+
 export const closeLocker = async (lockerId) => {
   const response = await api.post(`/lockers/${lockerId}/close`);
   return response.data;
 };
+
+export const confirmPresence = async (lockerId, presenceData) => {
+  const response = await api.post(`/lockers/${lockerId}/confirm_presence`, presenceData);
+  return response.data;
+};
+
+export const reportMissingItem = async (lockerId, reportData) => {
+  const response = await api.post(`/lockers/${lockerId}/report_missing`, reportData);
+  return response.data;
+}
 
 export const getLockerStatus = async (lockerId) => {
   const response = await api.get(`/lockers/${lockerId}/status`);
@@ -106,6 +121,11 @@ export const borrowItem = async (borrowData) => {
 
 export const returnItem = async (borrowId, returnData) => {
   const response = await api.post(`/borrows/${borrowId}/return`, returnData);
+  return response.data;
+};
+
+export const confirmReturn = async (data) => {
+  const response = await api.post(`/lockers/confirm_return`, data);
   return response.data;
 };
 
@@ -162,6 +182,8 @@ export const getPayments = async () => {
   const response = await api.get("/payments");
   return response.data;
 };
+
+
 
 export { api };
 export default api;
